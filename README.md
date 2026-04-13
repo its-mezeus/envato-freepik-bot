@@ -40,6 +40,33 @@ python3 bot.py
 | `BOT_TOKEN` | Yes | Telegram bot token |
 | `ADMIN_IDS` | Yes | Comma-separated admin user IDs |
 | `DAILY_LIMIT` | No | Max links per user per day (default: 4) |
+| `MODE` | No | `webhook` (default) or `polling` |
+| `WEBHOOK_URL` | For webhook | Your Render app URL (e.g. `https://envato-freepik-bot.onrender.com`) |
+| `PORT` | No | Port for Flask server (default: 10000) |
+
+## Deploy on Render (Free Tier — 24/7)
+
+1. Push this repo to GitHub
+2. Go to [render.com](https://render.com) → **New+** → **Web Service**
+3. Connect your GitHub repo
+4. Configure:
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `python3 bot.py`
+5. Add environment variables:
+   - `BOT_TOKEN` = your bot token
+   - `ADMIN_IDS` = admin IDs (comma-separated)
+   - `WEBHOOK_URL` = `https://your-app-name.onrender.com`
+   - `MODE` = `webhook`
+6. Deploy!
+
+## Run Locally (Polling)
+
+```bash
+export BOT_TOKEN="your-token"
+export ADMIN_IDS="id1,id2"
+export MODE="polling"
+python3 bot.py
+```
 
 ## Commands
 

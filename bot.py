@@ -4,14 +4,18 @@ Envato & Freepik Downloader Manager Bot
 Manages link requests in groups with daily slot limits + force join.
 """
 
-import os, re, json, asyncio, logging
+import os, re, json, asyncio, logging, threading
 from datetime import datetime, timedelta
+from flask import Flask, request as flask_request
 from telegram import Update, BotCommand, ChatPermissions, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "").split(",") if x.strip()]
 DAILY_LIMIT = int(os.environ.get("DAILY_LIMIT", "4"))
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")  # e.g. https://your-app.onrender.com
+PORT = int(os.environ.get("PORT", "10000"))
+MODE = os.environ.get("MODE", "webhook")  # "webhook" for Render, "polling" for local
 TZ_OFFSET = 5.5
 
 FORCE_CHANNELS = [
@@ -558,10 +562,21 @@ async def post_init(app: Application):
         BotCommand("info", "Your info & VIP status"),
     ])
 
-def main():
-    if not BOT_TOKEN:
-        print("Set BOT_TOKEN!")
-        return
+flask_app = Flask(__name__)
+tg_app = None
+
+@flask_app.route("/")
+def index():
+    return "🎨 Envato & Freepik Manager Bot is running!", 200
+
+@flask_app.route(f"/webhook", methods=["POST"])
+def webhook():
+    if tg_app:
+        update = Update.de_json(flask_request.get_json(force=True), tg_app.bot)
+        asyncio.run_coroutine_threadsafe(tg_app.process_update(update), tg_app._loop)
+    return "ok", 200
+
+def build_app():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
@@ -575,8 +590,35 @@ def main():
     app.add_handler(CommandHandler("viplist", viplist_cmd))
     app.add_handler(CallbackQueryHandler(verify_callback, pattern="^verify_join$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_group_message))
-    print("🎨 Envato & Freepik Manager Bot is running!")
-    app.run_polling(drop_pending_updates=True)
+    return app
+
+async def run_webhook():
+    global tg_app
+    tg_app = build_app()
+    await tg_app.initialize()
+    await tg_app.start()
+    tg_app._loop = asyncio.get_event_loop()
+    webhook_path = f"{WEBHOOK_URL}/webhook"
+    await tg_app.bot.set_webhook(webhook_path)
+    print(f"🎨 Envato & Freepik Manager Bot is running! (webhook: {webhook_path})")
+
+def main():
+    if not BOT_TOKEN:
+        print("Set BOT_TOKEN!")
+        return
+
+    if MODE == "webhook" and WEBHOOK_URL:
+        # Webhook mode for Render / production
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(run_webhook())
+        threading.Thread(target=loop.run_forever, daemon=True).start()
+        flask_app.run(host="0.0.0.0", port=PORT)
+    else:
+        # Polling mode for local development
+        app = build_app()
+        print("🎨 Envato & Freepik Manager Bot is running! (polling)")
+        app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
