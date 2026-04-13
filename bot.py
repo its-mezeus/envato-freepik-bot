@@ -13,7 +13,9 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "").split(",") if x.strip()]
 DAILY_LIMIT = int(os.environ.get("DAILY_LIMIT", "4"))
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")  # e.g. https://your-app.onrender.com
+# Auto-detect Render URL or use manual override
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "")  # Render sets this automatically
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "") or RENDER_EXTERNAL_URL
 PORT = int(os.environ.get("PORT", "10000"))
 MODE = os.environ.get("MODE", "webhook")  # "webhook" for Render, "polling" for local
 TZ_OFFSET = 5.5
