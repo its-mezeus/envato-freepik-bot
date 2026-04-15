@@ -340,9 +340,83 @@ async def addvip_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if tid in vips:
         await update.message.reply_text(f"⚠️ User <code>{tid}</code> is already VIP!", parse_mode="HTML")
         return
+    # Ask admin about force join setting for this VIP
+    try:
+        chat = await ctx.bot.get_chat(tid)
+        name = chat.first_name or "Unknown"
+        uname = f"@{chat.username}" if chat.username else "N/A"
+        user_info = f"<b>{name}</b> ({uname})"
+    except:
+        user_info = f"<code>{tid}</code>"
+    
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Force Join ON", callback_data=f"vip_fj_on_{tid}")],
+        [InlineKeyboardButton("❌ Force Join OFF", callback_data=f"vip_fj_off_{tid}")],
+        [InlineKeyboardButton("🚫 Cancel", callback_data=f"vip_cancel_{tid}")]
+    ])
+    await update.message.reply_text(
+        f"👑 <b>Adding VIP User</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 User: {user_info}\n"
+        f"🆔 ID: <code>{tid}</code>\n\n"
+        f"🔒 <b>Force Join for this VIP?</b>\n\n"
+        f"✅ <b>ON</b> — Must join channels (like normal users)\n"
+        f"❌ <b>OFF</b> — Skip force join completely",
+        reply_markup=kb, parse_mode="HTML"
+    )
+
+async def vip_forcejoin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("❌ Admin only!", show_alert=True)
+        return
+    
+    data_parts = query.data.split("_")
+    # vip_fj_on_123 or vip_fj_off_123 or vip_cancel_123
+    action = data_parts[1]  # "fj" or "cancel"
+    
+    if action == "cancel":
+        tid = int(data_parts[2])
+        await query.message.edit_text(f"🚫 Cancelled adding VIP <code>{tid}</code>", parse_mode="HTML")
+        await query.answer("Cancelled")
+        return
+    
+    fj_setting = data_parts[2]  # "on" or "off"
+    tid = int(data_parts[3])
+    
+    data = load_data()
+    vips = data.setdefault("vip", [])
+    if tid in vips:
+        await query.answer("Already VIP!", show_alert=True)
+        return
+    
     vips.append(tid)
+    # Store VIP force join settings
+    vip_settings = data.setdefault("vip_settings", {})
+    vip_settings[str(tid)] = {"force_join": fj_setting == "on"}
     save_data(data)
-    await update.message.reply_text(f"✅ User <code>{tid}</code> added as <b>VIP</b> — unlimited links!", parse_mode="HTML")
+    
+    fj_text = "✅ ON (must join channels)" if fj_setting == "on" else "❌ OFF (skip force join)"
+    
+    try:
+        chat = await ctx.bot.get_chat(tid)
+        name = chat.first_name or "Unknown"
+        uname = f"@{chat.username}" if chat.username else "N/A"
+        user_info = f"<b>{name}</b> ({uname})"
+    except:
+        user_info = f"<code>{tid}</code>"
+    
+    await query.message.edit_text(
+        f"👑 <b>VIP Added!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 User: {user_info}\n"
+        f"🆔 ID: <code>{tid}</code>\n"
+        f"🔒 Force Join: {fj_text}\n"
+        f"🎫 Slots: <b>Unlimited</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━",
+        parse_mode="HTML"
+    )
+    await query.answer("✅ VIP added!")
 
 async def removevip_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
@@ -372,15 +446,19 @@ async def viplist_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not vips:
         await update.message.reply_text("📋 <b>No VIP users</b>", parse_mode="HTML")
         return
+    vip_settings = data.get("vip_settings", {})
     text = f"👑 <b>VIP Users ({len(vips)})</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     for i, vid in enumerate(vips, 1):
+        fj = vip_settings.get(str(vid), {}).get("force_join", True)
+        fj_icon = "🔒" if fj else "🔓"
         try:
             chat = await ctx.bot.get_chat(vid)
             name = chat.first_name or "Unknown"
             uname = f"@{chat.username}" if chat.username else "N/A"
-            text += f"{i}. <b>{name}</b> ({uname}) — <code>{vid}</code>\n"
+            text += f"{i}. <b>{name}</b> ({uname}) — <code>{vid}</code> {fj_icon}\n"
         except:
-            text += f"{i}. <code>{vid}</code> (unknown)\n"
+            text += f"{i}. <code>{vid}</code> (unknown) {fj_icon}\n"
+    text += f"\n🔒 = Force Join ON | 🔓 = Force Join OFF"
     await update.message.reply_text(text, parse_mode="HTML")
 
 async def stats_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -424,8 +502,13 @@ async def handle_group_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = load_data()
     bot_me = await ctx.bot.get_me()
 
-    # ALWAYS check force join (even if previously verified)
-    not_joined = await check_force_join(ctx.bot, user.id)
+    # Check if VIP has force join disabled
+    vip_settings = data.get("vip_settings", {})
+    vip_fj = vip_settings.get(str(user.id), {}).get("force_join", True)
+    skip_fj = user.id in data.get("vip", []) and not vip_fj
+    
+    # ALWAYS check force join (unless VIP with force join OFF)
+    not_joined = [] if skip_fj else await check_force_join(ctx.bot, user.id)
     if not_joined:
         # Remove from verified list if they left channels
         if user.id in data.get("verified", []):
@@ -591,6 +674,7 @@ def build_app():
     app.add_handler(CommandHandler("removevip", removevip_cmd))
     app.add_handler(CommandHandler("viplist", viplist_cmd))
     app.add_handler(CallbackQueryHandler(verify_callback, pattern="^verify_join$"))
+    app.add_handler(CallbackQueryHandler(vip_forcejoin_callback, pattern="^vip_(fj|cancel)_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_group_message))
     return app
 
