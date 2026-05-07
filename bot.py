@@ -22,7 +22,7 @@ TZ_OFFSET = 5.5
 
 FORCE_CHANNELS = [
     {"username": "chatgaragee", "name": "Chat Garage"},
-    {"username": "freepikenvatopremiumfree", "name": "Freepik Envato Premium"},
+    {"username": "magnificenvatopremiumfree", "name": "Magnific Envato Premium"},
     {"username": "canvaprofree4everyone", "name": "Canva Pro Free"},
     {"username": "animationgarage", "name": "Animation Garage"},
     {"username": "techiesgarageofficial", "name": "Techies Garage"},
